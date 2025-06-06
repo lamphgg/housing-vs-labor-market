@@ -1,0 +1,73 @@
+#install packages
+if (!require("forecast")) install.packages("forecast")
+if (!require("readxl")) install.packages("readxl")
+if (!require("lmtest")) install.packages("lmtest")
+if (!require("tseries")) install.packages("tseries")
+if (!require("vars")) install.packages("vars")
+
+#Load libraries
+library(forecast)
+library(readxl)
+library(lmtest)
+library(tseries)
+library(vars)
+
+
+# 1.
+data_ts <- ts(data[, c("UNEMP", "STARTS", "COMPS")], start = c(1968, 1), frequency = 12)
+data_sub <- window(data_ts, end = c(1991, 12))
+plot(data_sub, main = "Time Series Variables")
+plot(data_ts)
+
+# 2. Lag selection VARselect()
+lag_selection <- VARselect(data_sub, lag.max = 8, type = "const")
+optimal_lag <- lag_selection$selection["SC(n)"]
+cat("Optimal lag (BIC):", optimal_lag, "\n")
+
+  ## Look at the output to check that all inverted AR roots are less than 1
+var_model <- VAR(data_sub, p = optimal_lag, type = "const")
+summary(var_model)
+
+# 3. Serial correlation test Serial.test()
+serial.test(var_model, lags.pt = 16, type = "PT.asymptotic")
+
+  ## Forecast for a 12 month horizon
+var_forecast <- predict(var_model, n.ahead = 12)
+print(var_forecast)
+par(mar = c(4, 4, 2, 1)) # c(bottom, left, top, right)
+plot(var_forecast)
+
+# 4. Granger Causality joint test
+causality(var_model, cause = c("STARTS", "COMPS"))
+causality(var_model, cause = "UNEMP")
+
+# 5. Impulse Response Function (IRF)
+  ## IRF computation
+irf_result <- irf(var_model, n.ahead = 36, boot = TRUE, runs = 50)
+
+  ## Plotting 2x2 IRF combinations
+  ### Make sure the plot window in Rstudio is expanded. Otherwise you might get an error message
+par(mfrow = c(3, 3), mar = c(4, 4, 2, 2))
+impulses <- c("UNEMP", "STARTS", "COMPS")
+responses <- c("UNEMP", "STARTS", "COMPS")
+for (imp in impulses) {
+  for (resp in responses) {
+    plot(irf_result,
+         impulse = imp,
+         response = resp,
+         plot.type = "single",
+         ask = FALSE)
+  }
+}
+  ## Reset layout
+par(mfrow = c(1, 1))
+
+
+# 6. Compute the Forecast Error Variance Decomposition (FEVD) for 10 steps ahead
+fevd_result <- fevd(var_model, n.ahead = 36)
+print("Forecast Error Variance Decomposition (FEVD):")
+print(fevd_result)
+
+# 7. Forecast 24 periods ahead
+forecast_24 <- predict(var_model, n.ahead = 24, ci = 0.95)
+plot(forecast_24)
